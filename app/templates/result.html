@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+{% block title %}Evaluation {{ evaluation.cve_id }} — CVRS{% endblock %}
+
+{% block content %}
+{% set ev = evaluation %}
+
+<div class="d-flex align-items-center mb-4">
+    <a href="/" class="btn btn-sm btn-outline-secondary me-3">&larr; Dashboard</a>
+    <h1 class="mb-0">Evaluation Result</h1>
+    <form method="POST" action="/evaluation/{{ ev.id }}/delete" class="ms-auto"
+          onsubmit="return confirm('Delete this evaluation permanently?');">
+        <button type="submit" class="btn btn-sm btn-outline-danger">
+            <i class="bi bi-trash"></i> Delete
+        </button>
+    </form>
+</div>
+
+<!-- Score Hero -->
+<div class="card mb-4 border-0 bg-{% if ev.final_score >= 7 %}danger{% elif ev.final_score >= 4 %}warning{% else %}success{% endif %} text-white">
+    <div class="card-body text-center py-4">
+        <div class="display-1 fw-bold">{{ ev.final_score }}</div>
+        <div class="fs-5">out of 10</div>
+        <div class="mt-2">
+            <span class="badge bg-light text-dark fs-6">{{ ev.cve_id }}</span>
+            <span class="badge bg-light text-dark fs-6 ms-1">{{ ev.asset_name }}</span>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- CVE Info -->
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">&#x1f4cb; CVE Details</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">CVE ID</dt>
+                    <dd class="col-sm-8"><code>{{ ev.cve_id }}</code></dd>
+                    <dt class="col-sm-4">NVD CVSS</dt>
+                    <dd class="col-sm-8">{{ ev.cvss_score or "Not available" }}</dd>
+                    <dt class="col-sm-4">Description</dt>
+                    <dd class="col-sm-8">{{ ev.cve_description }}</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+
+    <!-- Asset Info -->
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">&#x1f5a5;&#xfe0f; Asset Context</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Name</dt>
+                    <dd class="col-sm-8">{{ ev.asset_name }}</dd>
+                    <dt class="col-sm-4">Type</dt>
+                    <dd class="col-sm-8">{{ ev.asset_type | replace('_', ' ') | title }}</dd>
+                    <dt class="col-sm-4">Exposure</dt>
+                    <dd class="col-sm-8">
+                        <span class="badge {% if ev.asset_exposure == 'public' %}bg-danger{% elif ev.asset_exposure == 'internal' %}bg-warning text-dark{% else %}bg-success{% endif %}">
+                            {{ ev.asset_exposure | title }}
+                        </span>
+                    </dd>
+                    <dt class="col-sm-4">Criticality</dt>
+                    <dd class="col-sm-8">
+                        <span class="badge {% if ev.asset_criticality == 'high' %}bg-danger{% elif ev.asset_criticality == 'medium' %}bg-warning text-dark{% else %}bg-success{% endif %}">
+                            {{ ev.asset_criticality | title }}
+                        </span>
+                    </dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- LLM Risk Analysis with Justification -->
+<div class="card mb-4">
+    <div class="card-header d-flex align-items-center">
+        <span>&#x1f916; LLM Risk Analysis</span>
+        <span class="badge ms-2 fs-6
+            {% if ev.llm_threat_level and ev.llm_threat_level >= 8 %}bg-danger
+            {% elif ev.llm_threat_level and ev.llm_threat_level >= 5 %}bg-warning text-dark
+            {% else %}bg-success{% endif %}">
+            Threat: {{ ev.llm_threat_level }}/10
+        </span>
+        <span class="badge bg-secondary ms-2 fs-6">Model: {{ llm_model }}</span>
+    </div>
+    <div class="card-body">
+        {% if not ev.llm_narrative and not ev.llm_justification %}
+        <div class="alert alert-warning mb-0">
+            <strong>&#x26a0;&#xfe0f; LLM returned an empty response.</strong>
+            The model endpoint (<code>{{ llm_base_url }}</code>) may be unreachable or the model
+            name (<code>{{ llm_model }}</code>) is incorrect. Check <code>.env</code>.
+        </div>
+        {% else %}
+        {% if ev.llm_threat_level %}
+        <h6 class="text-muted mb-2">&#x1f4a1; Why the LLM chose threat level = {{ ev.llm_threat_level }}/10</h6>
+        <p class="mb-3">
+            {% if ev.llm_justification %}
+            {{ ev.llm_justification }}
+            {% else %}
+            The model assigned a threat level of <strong>{{ ev.llm_threat_level }}/10</strong>
+            based on the vulnerability and this asset's business context. See the
+            business narrative and remediation below for details.
+            {% endif %}
+        </p>
+        {% endif %}
+
+        {% if ev.llm_narrative %}
+        <h6 class="text-muted mb-2">&#x1f9e0; Risk Assessment (Business Narrative)</h6>
+        <blockquote class="blockquote mb-0 border-start border-3 border-primary ps-3">
+            <p class="mb-0">{{ ev.llm_narrative }}</p>
+        </blockquote>
+        {% endif %}
+        {% endif %}
+    </div>
+</div>
+
+{% if ev.remediation %}
+<!-- Remediation -->
+<div class="card mb-4 border-success">
+    <div class="card-header bg-success text-white">&#x1f6e0;&#xfe0f; Remediation Playbook</div>
+    <div class="card-body">
+        <p class="mb-0">{{ ev.remediation }}</p>
+    </div>
+</div>
+{% endif %}
+
+<!-- Financial Impact (Phase 2) -->
+<div class="card mb-4">
+    <div class="card-header">&#x1f4b0; Business Impact Analysis</div>
+    <div class="card-body">
+        <p class="text-muted small mb-3">
+            <strong>How this is calculated:</strong> each figure below is computed
+            deterministically from the asset type's financial parameters and the
+            LLM threat level. The asset type defines hourly revenue, annual turnover,
+            customer count and customer lifetime value; the threat level brackets
+            decide outage hours and customer churn tier. Click a component to see
+            the exact formula and the numbers that went into it.
+        </p>
+        {% if ev.downtime_cost or ev.regulatory_fines or ev.reputational_cost %}
+        <div class="row">
+            <div class="col-md-4 mb-3">
+                <div class="card bg-body-tertiary h-100">
+                    <div class="card-body text-center">
+                        <h6 class="text-muted">&#x23f1;&#xfe0f; Downtime Cost</h6>
+                        <div class="fs-4 fw-bold">{{ "${:,.0f}".format(ev.downtime_cost or 0) }}</div>
+                        {% if impact_breakdown and impact_breakdown.downtime %}
+                        <small class="text-muted d-block mt-1 font-monospace">{{ impact_breakdown.downtime.formula }}</small>
+                        {% else %}
+                        <small class="text-muted">Estimated outage from threat {{ ev.llm_threat_level or '?' }}/10</small>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-3">
+                <div class="card bg-body-tertiary h-100">
+                    <div class="card-body text-center">
+                        <h6 class="text-muted">&#x1f4dc; Regulatory Fines</h6>
+                        <div class="fs-4 fw-bold">{{ "${:,.0f}".format(ev.regulatory_fines or 0) }}</div>
+                        {% if impact_breakdown and impact_breakdown.regulatory and impact_breakdown.regulatory.per_tag %}
+                        <small class="text-muted d-block mt-1">{{ impact_breakdown.regulatory.per_tag | length }} compliance tag(s): {% for t in impact_breakdown.regulatory.per_tag %}{{ t.tag }}{% if not loop.last %}, {% endif %}{% endfor %}</small>
+                        {% else %}
+                        <small class="text-muted">GDPR / HIPAA / PCI-DSS / SOX / NIS2</small>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-3">
+                <div class="card bg-body-tertiary h-100">
+                    <div class="card-body text-center">
+                        <h6 class="text-muted">&#x1f4c9; Reputational Damage</h6>
+                        <div class="fs-4 fw-bold">{{ "${:,.0f}".format(ev.reputational_cost or 0) }}</div>
+                        {% if impact_breakdown and impact_breakdown.reputation %}
+                        <small class="text-muted d-block mt-1 font-monospace">{{ impact_breakdown.reputation.formula }}</small>
+                        {% else %}
+                        <small class="text-muted">Customer churn estimate</small>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="text-center p-3 bg-{% if ev.total_financial_impact and ev.total_financial_impact >= 10000000 %}danger{% elif ev.total_financial_impact and ev.total_financial_impact >= 1000000 %}warning{% else %}success{% endif %} text-white rounded">
+            <div class="fs-5">Total Estimated Financial Impact</div>
+            <div class="display-6 fw-bold">{{ "${:,.0f}".format(ev.total_financial_impact or 0) }}</div>
+            {% if impact_breakdown and impact_breakdown.total %}
+            <small class="d-block mt-1 font-monospace">{{ impact_breakdown.total.formula }}</small>
+            {% endif %}
+        </div>
+
+        {% if impact_breakdown %}
+        <details class="mt-3">
+            <summary class="fw-semibold small">&#x1f4dd; Per-value calculation details</summary>
+            <div class="mt-3">
+                <table class="table table-sm table-borderless mb-3">
+                    <thead>
+                        <tr><th style="width:20%">Component</th><th>How it was computed</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>&#x23f1;&#xfe0f; Downtime</strong></td>
+                            <td class="font-monospace small">{{ impact_breakdown.downtime.formula }}</td>
+                        </tr>
+                        {% for tag in impact_breakdown.regulatory.per_tag %}
+                        <tr>
+                            <td><strong>&#x1f4dc; Fine {{ tag.tag }}</strong></td>
+                            <td class="font-monospace small">{{ tag.formula }}</td>
+                        </tr>
+                        {% endfor %}
+                        <tr>
+                            <td><strong>&#x1f4c9; Reputation</strong></td>
+                            <td class="font-monospace small">{{ impact_breakdown.reputation.formula }}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Total</strong></td>
+                            <td class="font-monospace small">{{ impact_breakdown.total.formula }}</td>
+                        </tr>
+                        {% if scoring_formula == 'phase2' %}
+                        <tr>
+                            <td><strong>Financial score (0–10)</strong></td>
+                            <td class="font-monospace small">{{ impact_breakdown.financial_score_normalization.formula }} = <strong>{{ impact_breakdown.financial_score_normalization.score }}/10</strong></td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </details>
+        {% endif %}
+        {% else %}
+        <p class="text-muted mb-0">No financial impact data available for this evaluation.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Score Breakdown -->
+<div class="card">
+    <div class="card-header">&#x1f4d0; Score Breakdown &mdash; how each value was computed</div>
+    <div class="card-body">
+        <table class="table table-sm mb-0">
+            <thead>
+                <tr><th>Component</th><th>Weight</th><th>Value</th><th>Contrib.</th><th>Why this value</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>LLM Threat Level</td>
+                    <td>{% if scoring_formula == 'phase2' %}35%{% else %}50%{% endif %}</td>
+                    <td><strong>{{ ev.llm_threat_level }}/10</strong></td>
+                    <td><strong>{{ breakdown.llm_contribution }}</strong></td>
+                    <td class="small text-muted">Decided by the LLM from the CVE, asset exposure ({{ ev.asset_exposure }}), criticality ({{ ev.asset_criticality }}) and compliance tags &mdash; see the justification above. <span class="font-monospace">{{ ev.llm_threat_level }} &times; {{ weights.llm }} = {{ breakdown.llm_contribution }}</span></td>
+                </tr>
+                <tr>
+                    <td>Asset Criticality</td>
+                    <td>{% if scoring_formula == 'phase2' %}20%{% else %}30%{% endif %}</td>
+                    <td>{{ ev.asset_criticality | title }} &rarr; {{ crit_val }}/10</td>
+                    <td><strong>{{ breakdown.criticality_contribution }}</strong></td>
+                    <td class="small text-muted">Static map from the asset's <em>criticality</em> tag: high&middot;10, medium&middot;6, low&middot;3. <span class="font-monospace">{{ crit_val }} &times; {{ weights.crit }} = {{ breakdown.criticality_contribution }}</span></td>
+                </tr>
+                <tr>
+                    <td>Asset Exposure</td>
+                    <td>{% if scoring_formula == 'phase2' %}15%{% else %}20%{% endif %}</td>
+                    <td>{{ ev.asset_exposure | title }} &rarr; {{ exp_val }}/10</td>
+                    <td><strong>{{ breakdown.exposure_contribution }}</strong></td>
+                    <td class="small text-muted">Static map from the asset's <em>exposure</em> tag: public&middot;10, internal&middot;5, isolated&middot;2. <span class="font-monospace">{{ exp_val }} &times; {{ weights.exp }} = {{ breakdown.exposure_contribution }}</span></td>
+                </tr>
+                {% if scoring_formula == 'phase2' and breakdown.financial_contribution > 0 %}
+                <tr>
+                    <td>Financial Impact</td>
+                    <td>30%</td>
+                    <td>{{ "${:,.0f}".format(ev.total_financial_impact or 0) }} &rarr; {{ fin_score }}/10</td>
+                    <td><strong>{{ breakdown.financial_contribution }}</strong></td>
+                    <td class="small text-muted">Sum of downtime + fines + reputation costs, normalised via <code>log&#8321;&#8320;(total+1)&times;1.5</code> (capped at 10). <span class="font-monospace">{{ fin_score }} &times; {{ weights.fin }} = {{ breakdown.financial_contribution }}</span></td>
+                </tr>
+                {% endif %}
+                <tr class="table-active">
+                    <td colspan="3" class="text-end fw-bold">Total Score = sum of contributions</td>
+                    <td><strong>{{ ev.final_score }}/10</strong></td>
+                    <td class="small font-monospace">{{ breakdown.llm_contribution }} + {{ breakdown.criticality_contribution }} + {{ breakdown.exposure_contribution }}{% if scoring_formula == 'phase2' and breakdown.financial_contribution > 0 %} + {{ breakdown.financial_contribution }}{% endif %} = {{ ev.final_score }}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p class="text-muted small mt-3 mb-0">
+            Formula:
+            {% if scoring_formula == 'phase2' %}
+            <code>(LLM Threat &times; 0.35) + (Criticality &times; 0.20) + (Exposure &times; 0.15) + (Financial Impact &times; 0.30)</code>
+            {% else %}
+            <code>(LLM Threat &times; 0.5) + (Criticality &times; 0.3) + (Exposure &times; 0.2)</code>
+            {% endif %}
+        </p>
+    </div>
+</div>
+
+{% endblock %}

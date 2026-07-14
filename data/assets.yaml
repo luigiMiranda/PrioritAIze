@@ -1,0 +1,64 @@
+assets:
+  - id: "web-payment-prod"
+    name: "Payment Gateway (Production)"
+    type: "web_server"
+    exposure: "public"
+    criticality: "high"
+    compliance:
+      - "PCI-DSS"
+      - "GDPR"
+
+  - id: "db-customer-prod"
+    name: "Customer Database (Production)"
+    type: "database"
+    exposure: "internal"
+    criticality: "high"
+    compliance:
+      - "GDPR"
+      - "HIPAA"
+
+  - id: "web-corp-portal"
+    name: "Corporate Portal"
+    type: "web_server"
+    exposure: "public"
+    criticality: "medium"
+    compliance:
+      - "GDPR"
+
+  - id: "db-internal-dev"
+    name: "Development Database Server"
+    type: "database"
+    exposure: "internal"
+    criticality: "low"
+    compliance: []
+
+  - id: "iot-building-mgmt"
+    name: "Building Management System"
+    type: "iot_device"
+    exposure: "isolated"
+    criticality: "medium"
+    compliance: []
+
+  - id: "ws-finance-prod"
+    name: "Finance Workstation"
+    type: "workstation"
+    exposure: "internal"
+    criticality: "high"
+    compliance:
+      - "SOX"
+
+  - id: "api-third-party"
+    name: "Third-Party Integration API"
+    type: "api_endpoint"
+    exposure: "public"
+    criticality: "medium"
+    compliance:
+      - "GDPR"
+
+  - id: "scada-plant-floor"
+    name: "SCADA Plant Floor Controller"
+    type: "control_system"
+    exposure: "isolated"
+    criticality: "high"
+    compliance:
+      - "NIS2"

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}New Evaluation — CVRS{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">&#x1f50d; New Evaluation</h1>
+
+{% if error %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+<div class="row">
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-body">
+                <form method="POST" action="/evaluate">
+                    <div class="mb-3">
+                        <label for="cve_id" class="form-label">CVE ID</label>
+                        <input
+                            type="text"
+                            class="form-control font-monospace"
+                            id="cve_id"
+                            name="cve_id"
+                            placeholder="CVE-2021-44228"
+                            value="{{ cve_id or '' }}"
+                            required
+                            pattern="CVE-\d{4}-\d{4,}"
+                            title="Format: CVE-YYYY-NNNN">
+                        <div class="form-text">Enter a valid CVE ID. The system will fetch details from the NVD.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="asset_id" class="form-label">Target Asset</label>
+                        <select class="form-select" id="asset_id" name="asset_id" required>
+                            <option value="">— Select an asset —</option>
+                            {% for id, asset in assets.items() %}
+                            <option value="{{ id }}" {% if asset_id == id %}selected{% endif %}>
+                                {{ asset.name }}
+                                ({{ asset.type | replace('_', ' ') | title }},
+                                {{ asset.exposure | title }},
+                                {{ asset.criticality | title }}
+                                {% if asset.compliance %}&mdash; {{ asset.compliance | join(', ') }}{% endif %})
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">The asset determines the business context for risk scoring and financial impact.</div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Evaluate Risk</button>
+                    <a href="/" class="btn btn-outline-secondary">Cancel</a>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card mb-3">
+            <div class="card-header">How It Works</div>
+            <div class="card-body">
+                <ol class="mb-0">
+                    <li><strong>NVD enrichment</strong> — Fetches official CVE description &amp; CVSS score.</li>
+                    <li><strong>LLM reasoning</strong> — AI analyzes the vulnerability in the asset's business context.</li>
+                    <li><strong>Business impact</strong> — Quantifies downtime, regulatory fines, and reputational damage.</li>
+                    <li><strong>Score calculation</strong> — Combines LLM threat, asset factors, and financial impact.</li>
+                    <li><strong>Remediation playbook</strong> — LLM-generated actionable fix recommendations.</li>
+                </ol>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-body text-center">
+                <a href="/batch" class="btn btn-outline-primary w-100">&#x1f4e6; Batch Evaluation &rarr;</a>
+                <small class="text-muted d-block mt-1">Evaluate multiple CVEs at once</small>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

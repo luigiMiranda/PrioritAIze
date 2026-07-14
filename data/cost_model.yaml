@@ -1,0 +1,68 @@
+# Business Impact Modeler — Cost Parameters
+# Phase 2 | project.md §2.3
+
+currency: EUR
+
+# Per-asset-type financial parameters
+asset_types:
+  web_server:
+    hourly_revenue: 5000
+    annual_turnover: 50000000
+    customer_count: 100000
+    customer_lifetime_value: 500
+  database:
+    hourly_revenue: 2000
+    annual_turnover: 20000000
+    customer_count: 50000
+    customer_lifetime_value: 300
+  iot_device:
+    hourly_revenue: 500
+    annual_turnover: 5000000
+    customer_count: 0
+    customer_lifetime_value: 0
+  workstation:
+    hourly_revenue: 200
+    annual_turnover: 2000000
+    customer_count: 0
+    customer_lifetime_value: 0
+  api_endpoint:
+    hourly_revenue: 3000
+    annual_turnover: 30000000
+    customer_count: 80000
+    customer_lifetime_value: 400
+  control_system:
+    hourly_revenue: 10000
+    annual_turnover: 100000000
+    customer_count: 0
+    customer_lifetime_value: 0
+
+# Regulatory penalties (simplified flat/per-violation estimates)
+regulatory_fines:
+  GDPR:
+    base_penalty: 20000000      # €20M or 4% turnover
+    turnover_pct: 0.04
+  HIPAA:
+    base_penalty: 500000        # Tiered: $50K–$1.5M; base estimate
+  PCI-DSS:
+    base_penalty: 50000         # $5K–$100K/month; single-month estimate
+  SOX:
+    base_penalty: 5000000       # Up to $5M
+  NIS2:
+    base_penalty: 7000000       # Up to €10M or 2% turnover; mid-estimate
+
+# Estimated downtime hours by LLM threat level bracket
+downtime_mapping:
+  - threat_max: 4
+    hours: 2
+  - threat_max: 6
+    hours: 8
+  - threat_max: 8
+    hours: 24
+  - threat_max: 10
+    hours: 48
+
+# Reputational damage: customer churn by breach severity
+reputation:
+  churn_pct_critical: 0.20    # 20% churn for threat >= 8
+  churn_pct_high: 0.10        # 10% for threat 5–7
+  churn_pct_medium: 0.03      # 3% for threat < 5

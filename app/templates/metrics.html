@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Metrics — CVRS{% endblock %}
+
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">&#x1f4c8; Evaluation Metrics</h1>
+
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h6 class="text-muted">Total Evaluations</h6>
+                <div class="display-4 fw-bold">{{ total }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h6 class="text-muted">Score Distribution</h6>
+                <canvas id="miniScoreChart" height="80"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h6 class="text-muted">Avg Score by Exposure</h6>
+                <canvas id="exposureAvgChart" height="80"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h6 class="text-muted">By Asset Type</h6>
+                <canvas id="assetTypeDoughnut" height="80"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Survey Form -->
+<div class="card mb-4">
+    <div class="card-header">&#x1f4dd; Stakeholder Feedback</div>
+    <div class="card-body">
+        <p class="text-muted">How useful were the risk scores and remediation recommendations?</p>
+        <form id="feedback-form" class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Clarity of risk analysis</label>
+                <select class="form-select" name="clarity">
+                    <option value="">— Choose —</option>
+                    <option>5 — Excellent</option>
+                    <option>4 — Good</option>
+                    <option>3 — Adequate</option>
+                    <option>2 — Poor</option>
+                    <option>1 — Unusable</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Actionability of recommendations</label>
+                <select class="form-select" name="actionability">
+                    <option value="">— Choose —</option>
+                    <option>5 — Immediately actionable</option>
+                    <option>4 — Mostly actionable</option>
+                    <option>3 — Somewhat actionable</option>
+                    <option>2 — Vague</option>
+                    <option>1 — Not actionable</option>
+                </select>
+            </div>
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary" disabled>Submit Feedback</button>
+                <small class="text-muted ms-2">(Feedback collection endpoint pending — data stored locally for report)</small>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Historical Data Placeholder -->
+<div class="card">
+    <div class="card-header">&#x1f4c5; Score Trends</div>
+    <div class="card-body text-center text-muted py-4">
+        <p>Historical trend charts require multiple evaluation runs over time.</p>
+        <p class="mb-0"><em>Run more evaluations and re-scan top vulnerabilities to populate trend data.</em></p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Mini charts for metrics page
+document.addEventListener('DOMContentLoaded', () => {
+    const scoreDist = {{ score_distribution | tojson }};
+    const exposureAvg = {{ by_exposure | tojson }};
+    const assetTypes = {{ by_asset_type | tojson }};
+
+    if (scoreDist && scoreDist.length) {
+        new Chart(document.getElementById('miniScoreChart'), {
+            type: 'bar',
+            data: {
+                labels: scoreDist.map(d => d.range),
+                datasets: [{
+                    data: scoreDist.map(d => d.count),
+                    backgroundColor: ['#198754','#ffc107','#ffc107','#dc3545','#dc3545']
+                }]
+            },
+            options: { plugins: { legend: { display: false } }, scales: { y: { display: false }, x: { display: false } } }
+        });
+    }
+
+    if (exposureAvg && exposureAvg.length) {
+        new Chart(document.getElementById('exposureAvgChart'), {
+            type: 'bar',
+            data: {
+                labels: exposureAvg.map(d => d.asset_exposure),
+                datasets: [{
+                    data: exposureAvg.map(d => d.avg_score),
+                    backgroundColor: ['#dc3545','#ffc107','#198754']
+                }]
+            },
+            options: { plugins: { legend: { display: false } }, scales: { y: { max: 10, display: false }, x: { display: false } } }
+        });
+    }
+
+    if (assetTypes && assetTypes.length) {
+        new Chart(document.getElementById('assetTypeDoughnut'), {
+            type: 'doughnut',
+            data: {
+                labels: assetTypes.map(d => d.asset_type),
+                datasets: [{
+                    data: assetTypes.map(d => d.count),
+                    backgroundColor: ['#0d6efd','#6610f2','#d63384','#dc3545','#fd7e14','#ffc107','#198754','#6c757d']
+                }]
+            },
+            options: { plugins: { legend: { display: false } } }
+        });
+    }
+});
+</script>
+{% endblock %}

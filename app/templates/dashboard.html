@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — CVRS{% endblock %}
+
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>&#x1f4ca; Dashboard</h1>
+    <div>
+        <span class="badge bg-secondary me-2">Formula: {{ scoring_formula }}</span>
+        {% if evaluations %}
+        <button id="export-csv" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-download"></i> CSV
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+{% if evaluations %}
+<!-- Charts Row -->
+<div class="row mb-4">
+    <div class="col-lg-4 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <canvas id="scoreHistogram"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <canvas id="assetTypeChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <canvas id="exposureChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Top Vulnerabilities -->
+<div class="card mb-4">
+    <div class="card-header">&#x1f534; Top Vulnerabilities by Score</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" id="eval-table">
+            <thead class="table-dark">
+                <tr>
+                    <th>CVE ID</th>
+                    <th>Asset</th>
+                    <th>Type</th>
+                    <th>Exposure</th>
+                    <th>Criticality</th>
+                    <th>LLM Threat</th>
+                    <th>Final Score</th>
+                    <th>Financial Impact</th>
+                    <th>Evaluated</th>
+                    <th></th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for ev in evaluations %}
+                <tr>
+                    <td><code>{{ ev.cve_id }}</code></td>
+                    <td>{{ ev.asset_name }}</td>
+                    <td><span class="badge bg-secondary">{{ ev.asset_type | replace('_', ' ') | title }}</span></td>
+                    <td>
+                        <span class="badge {% if ev.asset_exposure == 'public' %}bg-danger{% elif ev.asset_exposure == 'internal' %}bg-warning text-dark{% else %}bg-success{% endif %}">
+                            {{ ev.asset_exposure | title }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="badge {% if ev.asset_criticality == 'high' %}bg-danger{% elif ev.asset_criticality == 'medium' %}bg-warning text-dark{% else %}bg-success{% endif %}">
+                            {{ ev.asset_criticality | title }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="badge rounded-pill
+                            {% if ev.llm_threat_level and ev.llm_threat_level >= 8 %}bg-danger
+                            {% elif ev.llm_threat_level and ev.llm_threat_level >= 5 %}bg-warning text-dark
+                            {% else %}bg-success{% endif %}">
+                            {{ ev.llm_threat_level or "—" }}/10
+                        </span>
+                    </td>
+                    <td>
+                        <span class="badge rounded-pill fs-6
+                            {% if ev.final_score >= 7 %}bg-danger
+                            {% elif ev.final_score >= 4 %}bg-warning text-dark
+                            {% else %}bg-success{% endif %}">
+                            {{ ev.final_score }}/10
+                        </span>
+                    </td>
+                    <td>
+                        {% if ev.total_financial_impact %}
+                        {{ "${:,.0f}".format(ev.total_financial_impact) }}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td class="text-muted small">{{ ev.created_at.strftime('%Y-%m-%d %H:%M') if ev.created_at else '' }}</td>
+                    <td><a href="/evaluation/{{ ev.id }}" class="btn btn-sm btn-outline-primary">View</a></td>
+                    <td>
+                        <form method="POST" action="/evaluation/{{ ev.id }}/delete"
+                              onsubmit="return confirm('Delete evaluation for {{ ev.cve_id }}? This cannot be undone.');"
+                              class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+</div>
+
+{% else %}
+<div class="card">
+    <div class="card-body text-center py-5">
+        <h5 class="text-muted">No evaluations yet</h5>
+        <p>Submit a CVE to get started.</p>
+        <a href="/evaluate" class="btn btn-primary">New Evaluation</a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/dashboard.js"></script>
+{% endblock %}

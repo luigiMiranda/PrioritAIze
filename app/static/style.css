@@ -1,0 +1,56 @@
+/* CVRS — Phase 2 styles */
+/* Dark/light theme support via Bootstrap's data-bs-theme */
+
+body {
+    background-color: #f8f9fa;
+}
+
+[data-bs-theme="dark"] body {
+    background-color: #212529;
+}
+
+.navbar-brand {
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+.card-header {
+    font-weight: 600;
+}
+
+code {
+    font-size: 0.9em;
+}
+
+.table td, .table th {
+    vertical-align: middle;
+}
+
+blockquote {
+    border-left: 4px solid #6c757d;
+    padding-left: 1rem;
+    color: #495057;
+}
+
+[data-bs-theme="dark"] blockquote {
+    color: #adb5bd;
+}
+
+/* Footer */
+footer {
+    border-top: 1px solid #dee2e6;
+}
+
+[data-bs-theme="dark"] footer {
+    border-top-color: #495057;
+}
+
+/* Fix Chart.js canvas in dark mode */
+[data-bs-theme="dark"] canvas {
+    filter: none;
+}
+
+/* Dashboard filters row */
+#eval-table_filter {
+    margin-bottom: 0.5rem;
+}

@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Batch Evaluation — CVRS{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">&#x1f4e6; Batch Evaluation</h1>
+
+{% if error %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+<div class="row">
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-body">
+                <form method="POST" action="/batch">
+                    <div class="mb-3">
+                        <label for="cve_list" class="form-label">CVE IDs</label>
+                        <textarea
+                            class="form-control font-monospace"
+                            id="cve_list"
+                            name="cve_list"
+                            rows="8"
+                            placeholder="CVE-2021-44228&#10;CVE-2021-45046&#10;CVE-2023-44487"
+                            required>{{ cve_list or '' }}</textarea>
+                        <div class="form-text">Enter one CVE ID per line. All CVEs will be evaluated against the selected asset.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="asset_id" class="form-label">Target Asset</label>
+                        <select class="form-select" id="asset_id" name="asset_id" required>
+                            <option value="">— Select an asset —</option>
+                            {% for id, asset in assets.items() %}
+                            <option value="{{ id }}" {% if asset_id == id %}selected{% endif %}>
+                                {{ asset.name }} ({{ asset.type | replace('_', ' ') | title }})
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">All CVEs will be evaluated in the context of this asset.</div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Run Batch</button>
+                    <a href="/" class="btn btn-outline-secondary">Cancel</a>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card mb-3">
+            <div class="card-header">How It Works</div>
+            <div class="card-body">
+                <ul class="mb-0">
+                    <li>Each CVE runs through the full pipeline independently.</li>
+                    <li>Up to 5 CVEs are processed concurrently.</li>
+                    <li>Results are persisted and shown in a sortable table.</li>
+                    <li>NVD &amp; LLM rate limits are respected automatically.</li>
+                </ul>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-body">
+                <h6>&#x1f4c4; CSV Upload (Coming Soon)</h6>
+                <p class="text-muted small mb-0">Nessus/Tenable export support will be available in a future update.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
