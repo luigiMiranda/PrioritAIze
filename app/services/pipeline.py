@@ -52,7 +52,9 @@ async def run_evaluation(cve_id: str, asset_id: str) -> dict:
     cve_data = await fetch_cve(cve_id)
 
     # Step 2: LLM risk reasoning (now includes remediation)
-    llm_result = await analyze_risk(cve_data["description"], asset, cve_data["cvss_score"])
+    llm_result = await analyze_risk(
+        cve_data["description"], asset, cve_data["cvss_score"]
+    )
 
     # Step 3: Business Impact Modeler
     impact = calculate_business_impact(asset, llm_result["threat_level"])
@@ -125,6 +127,106 @@ async def run_evaluation(cve_id: str, asset_id: str) -> dict:
         "cve_description": cve_data["description"],
         "cvss_score": cve_data["cvss_score"],
         "asset": asset,
+        "llm_threat_level": llm_result["threat_level"],
+        "llm_justification": llm_result.get("justification", ""),
+        "llm_narrative": llm_result["narrative"],
+        "remediation": llm_result.get("remediation", ""),
+        "raw_response": llm_result.get("raw_response", ""),
+        "final_score": final_score,
+        "impact": impact,
+        "impact_breakdown": impact_breakdown,
+        "financial_score": financial_score,
+    }
+
+
+async def run_custom_evaluation(cve_id: str, custom_asset: dict) -> dict:
+    """Execute the full evaluation pipeline with a user-defined custom asset.
+
+    Unlike ``run_evaluation``, this does not look up the asset from YAML.
+    The caller provides all asset fields directly (name, type, exposure,
+    criticality, compliance tags) along with optional financial overrides
+    (hourly_revenue, annual_turnover, customer_count, customer_lifetime_value).
+
+    Penalties, churn percentages, and downtime hours remain sourced from
+    ``data/cost_model.yaml`` and are **not** user-configurable.
+    """
+    # Step 1: NVD enrichment
+    cve_data = await fetch_cve(cve_id)
+
+    # Step 2: LLM risk reasoning
+    llm_result = await analyze_risk(
+        cve_data["description"], custom_asset, cve_data["cvss_score"]
+    )
+
+    # Step 3: Business Impact Modeler (reads financial overrides from asset)
+    impact = calculate_business_impact(custom_asset, llm_result["threat_level"])
+    financial_score = normalize_financial_impact(impact["total_financial_impact"])
+
+    # Step 4: Score calculation
+    final_score = calculate_score(
+        llm_result["threat_level"],
+        custom_asset["exposure"],
+        custom_asset["criticality"],
+        financial_impact_score=financial_score,
+    )
+
+    # Step 5: Build impact breakdown for UI
+    impact_breakdown = {
+        "downtime": {
+            "cost": impact["downtime_cost"],
+            "hours": impact["downtime_hours"],
+            "hourly_revenue": impact["hourly_revenue"],
+            "formula": impact["downtime_formula"],
+        },
+        "regulatory": {
+            "total": impact["regulatory_fines"],
+            "per_tag": impact["regulatory_breakdown"],
+        },
+        "reputation": {
+            "cost": impact["reputational_cost"],
+            **impact["reputation_detail"],
+        },
+        "total": {
+            "value": impact["total_financial_impact"],
+            "formula": impact["total_formula"],
+        },
+        "financial_score_normalization": {
+            "raw_total": impact["total_financial_impact"],
+            "formula": "log10(total + 1) × 1.5, capped at 10",
+            "score": financial_score,
+        },
+    }
+
+    # Step 6: Persist
+    eval_id = insert_evaluation(
+        {
+            "cve_id": cve_id.upper(),
+            "cve_description": cve_data["description"],
+            "cvss_score": cve_data["cvss_score"],
+            "asset_id": custom_asset.get("id", "__custom__"),
+            "asset_name": custom_asset["name"],
+            "asset_type": custom_asset["type"],
+            "asset_exposure": custom_asset["exposure"],
+            "asset_criticality": custom_asset["criticality"],
+            "llm_threat_level": llm_result["threat_level"],
+            "llm_narrative": llm_result["narrative"],
+            "final_score": final_score,
+            "downtime_cost": impact["downtime_cost"],
+            "regulatory_fines": impact["regulatory_fines"],
+            "reputational_cost": impact["reputational_cost"],
+            "total_financial_impact": impact["total_financial_impact"],
+            "remediation": llm_result.get("remediation", ""),
+            "llm_justification": llm_result.get("justification", ""),
+            "impact_breakdown": json.dumps(impact_breakdown, ensure_ascii=False),
+        }
+    )
+
+    return {
+        "id": eval_id,
+        "cve_id": cve_id.upper(),
+        "cve_description": cve_data["description"],
+        "cvss_score": cve_data["cvss_score"],
+        "asset": custom_asset,
         "llm_threat_level": llm_result["threat_level"],
         "llm_justification": llm_result.get("justification", ""),
         "llm_narrative": llm_result["narrative"],

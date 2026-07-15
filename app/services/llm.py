@@ -15,40 +15,118 @@ _client = OpenAI(base_url=LLM_BASE_URL, api_key=LLM_API_KEY)
 # emit their chain-of-thought in a separate `reasoning_content` field and only
 # place the final answer in `content`. The chain-of-thought tokens count against
 # the completion budget, so a small max_tokens can leave `content` empty while
-# the actual reasoning is discarded. 4096 is plenty for a structured 3-line
-# answer plus the internal deliberation that produces it.
-MAX_OUTPUT_TOKENS = 4096
+# the actual reasoning is discarded. 8192 is plenty for reasoning + a detailed
+# 4-line structured answer with expanded justifications.
+MAX_OUTPUT_TOKENS = 8192
 
 SYSTEM_PROMPT = """\
 You are a cybersecurity risk analyst. Given a vulnerability (CVE) and asset \
 context, assess the real-world risk to the business.
 
 Reply with exactly four lines in this format — nothing else:
+
 THREAT_LEVEL: <integer 1-10>
-JUSTIFICATION: <3-5 sentences explaining WHY you chose this threat level. \
-Reference the specific CVE characteristics (exploitability, attack vector, \
-impact), the asset type, its exposure, its criticality, and any applicable \
-compliance tags. Compare the technical severity against the business context \
-to justify raising or lowering the level versus the raw CVSS score.>
-NARRATIVE: <2-4 sentence risk assessment in business terms, referencing the \
-specific asset type, exposure, and criticality.>
-REMEDIATION: <2-3 sentence actionable remediation recommendation.>
+
+JUSTIFICATION: <A detailed explanation (6-10 sentences) of WHY you chose this \
+threat level. For each factor below, explicitly state how it influenced your \
+decision — whether it raised or lowered the threat versus the raw CVSS score:
+
+1. CVE CHARACTERISTICS — describe the vulnerability type (RCE, XSS, SQLi, \
+privilege escalation, info disclosure, etc.), attack vector (network/adjacent/\
+local), attack complexity, privileges required, and user interaction. Explain \
+how severe the technical impact is (confidentiality, integrity, availability).
+
+2. ASSET TYPE — explain how this specific asset type (web_server, database, \
+api_endpoint, etc.) affects the real-world impact. For example: a database \
+holding sensitive data amplifies data-breach risk; an IoT device may have \
+physical-safety implications; a control_system could cause operational \
+disruption.
+
+3. EXPOSURE — state whether the asset is public-facing, internal, or isolated, \
+and explain concretely how that changes the attack surface. A public asset \
+can be attacked by anyone on the internet; an internal asset requires \
+network access; an isolated asset has minimal reachability.
+
+4. CRITICALITY — state the asset's business criticality (high/medium/low) and \
+explain what happens if it goes down or is compromised. High-criticality \
+assets cause immediate revenue loss or safety risk; low-criticality assets \
+have limited blast radius.
+
+5. COMPLIANCE — if any compliance tags apply (GDPR, HIPAA, PCI-DSS, SOX, \
+NIS2), explain the regulatory consequences of a breach on this asset. Mention \
+specific fines or legal exposure where relevant.
+
+6. FINAL VERDICT — compare your assigned threat level to the static CVSS \
+score. If you raised it, explain which business-context factors drove the \
+escalation. If you lowered it, explain why the real-world risk is less than \
+the technical score suggests.
+
+Do NOT use bullet points — write in flowing prose as a single cohesive \
+paragraph.>
+
+NARRATIVE: <3-5 sentence risk assessment in business terms. Describe the \
+real-world scenario: what an attacker could do, what data or services are at \
+risk, who would be affected (customers, employees, regulators), and what the \
+business consequences would be. Reference the specific asset type, exposure, \
+and criticality.>
+
+REMEDIATION: <3-4 sentence actionable remediation recommendation. Be specific: \
+mention patching, configuration changes, network segmentation, monitoring, \
+or compensating controls appropriate for this asset type and exposure.>
 """
 
 
 def build_user_prompt(cve_description: str, asset: dict) -> str:
-    compliance = ", ".join(asset.get("compliance", [])) or "none"
+    # Provide business-meaningful descriptions for each exposure / criticality level
+    exposure_map = {
+        "public": "Public-facing — directly reachable from the internet, maximum attack surface.",
+        "internal": "Internal network — accessible only within the corporate LAN/VPN, reduced attack surface.",
+        "isolated": "Isolated / air-gapped — no external network access, minimal reachability.",
+    }
+    criticality_map = {
+        "high": "High — business-critical; downtime causes immediate revenue loss, operational failure, or safety risk.",
+        "medium": "Medium — important but not mission-critical; moderate business impact if compromised.",
+        "low": "Low — non-essential, dev/test, or low-value asset; limited blast radius.",
+    }
+    type_map = {
+        "web_server": "Web server — serves web applications or APIs; typically holds application logic and may have database credentials.",
+        "database": "Database server — stores structured data; compromise means data exfiltration, corruption, or deletion.",
+        "api_endpoint": "API endpoint — serves programmatic interfaces; often a gateway to backend systems and data.",
+        "iot_device": "IoT device — embedded/connected device; may control physical systems or collect sensor data.",
+        "workstation": "Workstation — end-user desktop or laptop; entry point for lateral movement into the network.",
+        "control_system": "Control system (OT/SCADA) — manages industrial or physical processes; compromise risks safety and operational continuity.",
+    }
+
+    compliance_impact: dict[str, str] = {
+        "GDPR": "GDPR — personal data of EU citizens; fines up to €20M or 4% of annual global turnover.",
+        "HIPAA": "HIPAA — protected health information (PHI); fines up to $50K–$1.5M per violation category.",
+        "PCI-DSS": "PCI-DSS — payment card data; fines $5K–$100K per month, plus potential loss of card-processing privileges.",
+        "SOX": "SOX — financial reporting integrity; fines up to $5M and potential executive criminal liability.",
+        "NIS2": "NIS2 — essential/critical infrastructure; fines up to €10M or 2% of annual global turnover.",
+    }
+
+    compliance_details = (
+        "\n".join(
+            f"  - {tag}: {compliance_impact.get(tag, tag)}"
+            for tag in asset.get("compliance", [])
+        )
+        or "  - None — no specific regulatory framework applies."
+    )
+
     return f"""\
 Vulnerability: {cve_description}
 
 Asset Context:
 - Name: {asset["name"]}
-- Type: {asset["type"]}
-- Exposure: {asset["exposure"]}
-- Criticality: {asset["criticality"]}
-- Compliance tags: {compliance}
+- Type: {asset["type"]} ({type_map.get(asset["type"], asset["type"])})
+- Exposure: {asset["exposure"]} ({exposure_map.get(asset["exposure"], asset["exposure"])})
+- Criticality: {asset["criticality"]} ({criticality_map.get(asset["criticality"], asset["criticality"])})
+- Compliance tags & implications:
+{compliance_details}
 
-Analyze the risk of this vulnerability on this specific asset."""
+Analyze the risk of this vulnerability on this specific asset. Consider how \
+every contextual factor — asset type, exposure, criticality, and compliance — \
+changes the real-world impact versus the raw CVSS severity."""
 
 
 # ── response parser ────────────────────────────────────────────────────────
@@ -57,6 +135,9 @@ _THREAT_RE = re.compile(
     r"(?:THREAT[_ ]?LEVEL)\s*[:\-=]\s*(\d+(?:\.\d+)?)",
     re.IGNORECASE,
 )
+# The JUSTIFICATION regex captures everything between JUSTIFICATION: and the next
+# section marker (NARRATIVE/REMEDIATION/THREAT_LEVEL). It is greedy up to the
+# lookahead, so multi-sentence, multi-line justifications are captured in full.
 _JUSTIFICATION_RE = re.compile(
     r"(?:JUSTIFICATION)\s*[:\-=]\s*(.+?)(?=\n\s*(?:NARRATIVE|REMEDIATION|THREAT[_ ]?LEVEL)\b|$)",
     re.IGNORECASE | re.DOTALL,
@@ -208,12 +289,23 @@ async def analyze_risk(
 
     # If the model produced no explicit justification, synthesise a minimal one
     # so the evaluation page can still explain the score.
-    if not justification and narrative:
-        justification = (
-            f"The model assigned a threat level of {threat_level}/10 based on the "
-            f"vulnerability's characteristics and this asset's business context. "
-            f"See the business narrative and remediation for details."
-        )
+    if not justification:
+        if narrative:
+            justification = (
+                f"The model assigned a threat level of {threat_level}/10 based on the "
+                f"vulnerability's characteristics and this asset's business context "
+                f"(type={asset.get('type')}, exposure={asset.get('exposure')}, "
+                f"criticality={asset.get('criticality')}, "
+                f"compliance={', '.join(asset.get('compliance', []) or ['none'])}). "
+                f"See the business narrative and remediation for details."
+            )
+        else:
+            justification = (
+                f"The model assigned a threat level of {threat_level}/10. "
+                f"No detailed explanation was produced — the LLM response "
+                f"was empty or truncated. Re-run the evaluation to get a "
+                f"full analysis."
+            )
 
     return {
         "threat_level": threat_level,

@@ -333,7 +333,7 @@ wheels = [
 ]
 
 [[package]]
-name = "progetto-pentest"
+name = "prioritaize"
 version = "0.2.0"
 source = { virtual = "." }
 dependencies = [

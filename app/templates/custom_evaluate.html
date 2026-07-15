@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+{% block title %}Custom Evaluation — CVRS{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">&#x1f6e0;&#xfe0f; Custom Evaluation</h1>
+<p class="text-muted mb-4">Define a custom asset with its own financial parameters.
+Penalties, churn rates, and downtime hours are always sourced from the cost model
+and <strong>cannot be set here</strong>.</p>
+
+{% if error %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+<div class="row">
+    <div class="col-lg-8">
+        <form method="POST" action="/evaluate/custom">
+            <!-- ===== CVE ID ===== -->
+            <div class="card mb-4">
+                <div class="card-header">&#x1f4cb; CVE ID</div>
+                <div class="card-body">
+                    <div class="mb-0">
+                        <input
+                            type="text"
+                            class="form-control font-monospace"
+                            id="cve_id"
+                            name="cve_id"
+                            placeholder="CVE-2021-44228"
+                            value="{{ cve_id or '' }}"
+                            required
+                            pattern="CVE-\d{4}-\d{4,}"
+                            title="Format: CVE-YYYY-NNNN">
+                        <div class="form-text">A valid CVE ID. Data is fetched from the NVD.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== Asset Metadata ===== -->
+            <div class="card mb-4">
+                <div class="card-header">&#x1f5a5;&#xfe0f; Asset Metadata</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="asset_name" class="form-label">Asset Name</label>
+                        <input
+                            type="text"
+                            class="form-control"
+                            id="asset_name"
+                            name="asset_name"
+                            placeholder="e.g. Custom Production API"
+                            value="{{ asset_name or '' }}"
+                            required>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="asset_type" class="form-label">Asset Type</label>
+                            <select class="form-select" id="asset_type" name="asset_type" required>
+                                <option value="">— Select —</option>
+                                <option value="web_server" {% if asset_type == 'web_server' %}selected{% endif %}>Web Server</option>
+                                <option value="database" {% if asset_type == 'database' %}selected{% endif %}>Database</option>
+                                <option value="api_endpoint" {% if asset_type == 'api_endpoint' %}selected{% endif %}>API Endpoint</option>
+                                <option value="iot_device" {% if asset_type == 'iot_device' %}selected{% endif %}>IoT Device</option>
+                                <option value="workstation" {% if asset_type == 'workstation' %}selected{% endif %}>Workstation</option>
+                                <option value="control_system" {% if asset_type == 'control_system' %}selected{% endif %}>Control System</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Exposure Level</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="exposure" id="exp-public" value="public"
+                                    {% if exposure == 'public' %}checked{% endif %} required>
+                                <label class="form-check-label" for="exp-public">
+                                    <span class="badge bg-danger">Public</span> — reachable from the internet
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="exposure" id="exp-internal" value="internal"
+                                    {% if exposure == 'internal' %}checked{% endif %}>
+                                <label class="form-check-label" for="exp-internal">
+                                    <span class="badge bg-warning text-dark">Internal</span> — internal network only
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="exposure" id="exp-isolated" value="isolated"
+                                    {% if exposure == 'isolated' %}checked{% endif %}>
+                                <label class="form-check-label" for="exp-isolated">
+                                    <span class="badge bg-success">Isolated</span> — air-gapped / segmented
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Criticality</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="criticality" id="crit-high" value="high"
+                                    {% if criticality == 'high' %}checked{% endif %} required>
+                                <label class="form-check-label" for="crit-high">
+                                    <span class="badge bg-danger">High</span> — business-critical / revenue-impacting
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="criticality" id="crit-medium" value="medium"
+                                    {% if criticality == 'medium' %}checked{% endif %}>
+                                <label class="form-check-label" for="crit-medium">
+                                    <span class="badge bg-warning text-dark">Medium</span> — important but not critical
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="criticality" id="crit-low" value="low"
+                                    {% if criticality == 'low' %}checked{% endif %}>
+                                <label class="form-check-label" for="crit-low">
+                                    <span class="badge bg-success">Low</span> — non-essential / dev / test
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-0">
+                        <label class="form-label">Compliance Tags</label>
+                        <div class="d-flex flex-wrap gap-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="compliance" id="comp-gdpr" value="GDPR"
+                                    {% if 'GDPR' in compliance %}checked{% endif %}>
+                                <label class="form-check-label" for="comp-gdpr">GDPR</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="compliance" id="comp-hipaa" value="HIPAA"
+                                    {% if 'HIPAA' in compliance %}checked{% endif %}>
+                                <label class="form-check-label" for="comp-hipaa">HIPAA</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="compliance" id="comp-pci" value="PCI-DSS"
+                                    {% if 'PCI-DSS' in compliance %}checked{% endif %}>
+                                <label class="form-check-label" for="comp-pci">PCI-DSS</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="compliance" id="comp-sox" value="SOX"
+                                    {% if 'SOX' in compliance %}checked{% endif %}>
+                                <label class="form-check-label" for="comp-sox">SOX</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="compliance" id="comp-nis2" value="NIS2"
+                                    {% if 'NIS2' in compliance %}checked{% endif %}>
+                                <label class="form-check-label" for="comp-nis2">NIS2</label>
+                            </div>
+                        </div>
+                        <div class="form-text">Select all compliance frameworks that apply. These trigger regulatory fine calculations.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== Financial Parameters ===== -->
+            <div class="card mb-4">
+                <div class="card-header">&#x1f4b0; Financial Parameters <span class="text-muted fw-normal">(override cost-model defaults)</span></div>
+                <div class="card-body">
+                    <p class="text-muted small">
+                        These values replace the per-type defaults from <code>cost_model.yaml</code>.
+                        Regulatory penalties, churn percentages, and downtime-hour brackets
+                        are <strong>not</strong> configurable — they are always read from the cost model.
+                    </p>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="hourly_revenue" class="form-label">Hourly Revenue (€/hour)</label>
+                            <input
+                                type="number"
+                                class="form-control"
+                                id="hourly_revenue"
+                                name="hourly_revenue"
+                                placeholder="e.g. 5000"
+                                value="{{ hourly_revenue or '' }}"
+                                min="0"
+                                step="any"
+                                required>
+                            <div class="form-text">Revenue lost per hour of downtime.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="annual_turnover" class="form-label">Annual Turnover (€)</label>
+                            <input
+                                type="number"
+                                class="form-control"
+                                id="annual_turnover"
+                                name="annual_turnover"
+                                placeholder="e.g. 50000000"
+                                value="{{ annual_turnover or '' }}"
+                                min="0"
+                                step="any"
+                                required>
+                            <div class="form-text">Used in regulatory fine calculations (e.g. GDPR: 4% of turnover).</div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label for="customer_count" class="form-label">Customer Count</label>
+                            <input
+                                type="number"
+                                class="form-control"
+                                id="customer_count"
+                                name="customer_count"
+                                placeholder="e.g. 100000"
+                                value="{{ customer_count if customer_count is defined else '' }}"
+                                min="0"
+                                step="1"
+                                required>
+                            <div class="form-text">Number of customers affected by a breach.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="customer_lifetime_value" class="form-label">Customer Lifetime Value (€)</label>
+                            <input
+                                type="number"
+                                class="form-control"
+                                id="customer_lifetime_value"
+                                name="customer_lifetime_value"
+                                placeholder="e.g. 500"
+                                value="{{ customer_lifetime_value or '' }}"
+                                min="0"
+                                step="any"
+                                required>
+                            <div class="form-text">Average CLV used in reputational damage estimate.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-lg">&#x1f300; Evaluate Custom Risk</button>
+            <a href="/" class="btn btn-outline-secondary btn-lg ms-2">Cancel</a>
+        </form>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card mb-3">
+            <div class="card-header">How Custom Evaluation Works</div>
+            <div class="card-body">
+                <ol class="mb-0 small">
+                    <li class="mb-2"><strong>You define</strong> the asset metadata (type, exposure, criticality, compliance) and financial parameters (revenue, turnover, customers).</li>
+                    <li class="mb-2"><strong>NVD enrichment</strong> fetches the official CVE description &amp; CVSS score.</li>
+                    <li class="mb-2"><strong>LLM reasoning</strong> analyzes the vulnerability in the custom asset's business context.</li>
+                    <li class="mb-2"><strong>Business impact</strong> is computed using <em>your</em> financial parameters combined with cost-model penalties, churn rates, and downtime brackets.</li>
+                    <li><strong>Score calculation</strong> uses the same weighted formula as standard evaluations.</li>
+                </ol>
+            </div>
+        </div>
+        <div class="card mb-3">
+            <div class="card-header">&#x26a0;&#xfe0f; What You Cannot Set</div>
+            <div class="card-body small">
+                <ul class="mb-0">
+                    <li class="mb-1"><strong>Penalties</strong> — regulatory fines (GDPR €20M, HIPAA €500K, etc.) are fixed in the cost model.</li>
+                    <li class="mb-1"><strong>Churn rates</strong> — customer churn percentages (3% / 10% / 20%) are fixed by threat-level bracket.</li>
+                    <li><strong>Downtime hours</strong> — outage duration (2h / 8h / 24h / 48h) is fixed by threat-level bracket.</li>
+                </ul>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-body text-center">
+                <a href="/evaluate" class="btn btn-outline-primary w-100">&#x1f4cb; Standard Evaluation &rarr;</a>
+                <small class="text-muted d-block mt-1">Use a pre-defined asset from the catalog</small>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

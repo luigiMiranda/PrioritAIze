@@ -37,19 +37,41 @@ def calculate_business_impact(asset: dict, threat_level: float) -> dict:
 
     type_cfg = model["asset_types"].get(asset_type, model["asset_types"]["web_server"])
 
+    # Allow asset dict to carry its own financial parameters (custom evaluation).
+    # When present, they override the per-type defaults from cost_model.yaml.
+    # Penalties, churn, and downtime hours always come from cost_model.yaml.
+    if "hourly_revenue" in asset:
+        hourly_revenue = float(asset["hourly_revenue"])
+    else:
+        hourly_revenue = type_cfg.get("hourly_revenue", 1000.0)
+
+    if "annual_turnover" in asset:
+        annual_turnover = float(asset["annual_turnover"])
+    else:
+        annual_turnover = type_cfg.get("annual_turnover", 0.0)
+
+    if "customer_count" in asset:
+        customer_count = int(asset["customer_count"])
+    else:
+        customer_count = int(type_cfg.get("customer_count", 0))
+
+    if "customer_lifetime_value" in asset:
+        clv = float(asset["customer_lifetime_value"])
+    else:
+        clv = float(type_cfg.get("customer_lifetime_value", 0))
+
     # 1. Downtime cost ─────────────────────────────────────────────────
-    hourly_revenue: float = type_cfg.get("hourly_revenue", 1000.0)
     downtime_hours = _estimate_downtime(threat_level, model)
     downtime_cost = hourly_revenue * downtime_hours
 
     # 2. Regulatory fines ──────────────────────────────────────────────
     regulatory_fines, regulatory_breakdown = _calculate_fines(
-        compliance_tags, type_cfg, model
+        compliance_tags, type_cfg, model, annual_turnover
     )
 
     # 3. Reputational damage ───────────────────────────────────────────
     reputational_cost, reputation_detail = _calculate_reputation(
-        threat_level, type_cfg, model
+        threat_level, type_cfg, model, customer_count, clv
     )
 
     total = downtime_cost + regulatory_fines + reputational_cost
@@ -107,7 +129,10 @@ def _estimate_downtime(threat_level: float, model: dict) -> int:
 
 
 def _calculate_fines(
-    tags: list[str], type_cfg: dict, model: dict
+    tags: list[str],
+    type_cfg: dict,
+    model: dict,
+    annual_turnover_override: float | None = None,
 ) -> tuple[float, list[dict]]:
     """Return (total_fines, per_tag_breakdown).
 
@@ -115,7 +140,11 @@ def _calculate_fines(
     the exact computation, e.g. ``GDPR = max(€20M, 4% × €50M) = €20M``.
     """
     fine_cfg = model.get("regulatory_fines", {})
-    annual_turnover: float = type_cfg.get("annual_turnover", 0.0)
+    annual_turnover: float = (
+        annual_turnover_override
+        if annual_turnover_override is not None
+        else type_cfg.get("annual_turnover", 0.0)
+    )
     total = 0.0
     breakdown: list[dict] = []
 
@@ -145,7 +174,11 @@ def _calculate_fines(
 
 
 def _calculate_reputation(
-    threat_level: float, type_cfg: dict, model: dict
+    threat_level: float,
+    type_cfg: dict,
+    model: dict,
+    customer_count_override: int | None = None,
+    clv_override: float | None = None,
 ) -> tuple[float, dict]:
     """Return (reputational_cost, detail).
 
@@ -163,8 +196,16 @@ def _calculate_reputation(
         churn_key = "churn_pct_medium"
         tier = "medium (threat < 5)"
     churn_pct = float(rep.get(churn_key, 0.0))
-    customers = int(type_cfg.get("customer_count", 0))
-    clv = float(type_cfg.get("customer_lifetime_value", 0))
+    customers = (
+        customer_count_override
+        if customer_count_override is not None
+        else int(type_cfg.get("customer_count", 0))
+    )
+    clv = (
+        clv_override
+        if clv_override is not None
+        else float(type_cfg.get("customer_lifetime_value", 0))
+    )
     cost = customers * churn_pct * clv
     return cost, {
         "churn_pct": churn_pct,

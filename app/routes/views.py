@@ -10,7 +10,12 @@ from fastapi import APIRouter, Request, Form
 from fastapi.responses import RedirectResponse
 
 from app.config import APP_API_KEY, SCORING_FORMULA, LLM_BASE_URL, LLM_MODEL
-from app.services.pipeline import run_evaluation, AssetNotFoundError, load_assets
+from app.services.pipeline import (
+    run_evaluation,
+    run_custom_evaluation,
+    AssetNotFoundError,
+    load_assets,
+)
 from app.services.batch import run_batch
 from app.services.nvd import CVENotFoundError
 from app.templating import templates
@@ -176,6 +181,158 @@ async def evaluation_delete(request: Request, eval_id: int):
         _client_ip(request),
     )
     return RedirectResponse(url="/", status_code=303)
+
+
+# ── Batch evaluation (Phase 2) ─────────────────────────────────────────────
+
+
+# ── Custom evaluation (user-defined asset + financial parameters) ─────────
+
+
+@router.get("/evaluate/custom")
+async def custom_evaluate_form(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="custom_evaluate.html",
+        context={},
+    )
+
+
+@router.post("/evaluate/custom")
+async def custom_evaluate_submit(request: Request):
+    form = await request.form()
+
+    cve_id = form.get("cve_id", "").strip()
+    asset_name = form.get("asset_name", "").strip()
+    asset_type = form.get("asset_type", "").strip()
+    exposure = form.get("exposure", "").strip()
+    criticality = form.get("criticality", "").strip()
+    compliance = form.getlist("compliance")
+    hourly_revenue_str = form.get("hourly_revenue", "").strip()
+    annual_turnover_str = form.get("annual_turnover", "").strip()
+    customer_count_str = form.get("customer_count", "").strip()
+    clv_str = form.get("customer_lifetime_value", "").strip()
+
+    # --- Validation ---------------------------------------------------
+    valid_types = {
+        "web_server",
+        "database",
+        "api_endpoint",
+        "iot_device",
+        "workstation",
+        "control_system",
+    }
+    valid_exposures = {"public", "internal", "isolated"}
+    valid_criticalities = {"high", "medium", "low"}
+
+    errors: list[str] = []
+    if not cve_id:
+        errors.append("CVE ID is required.")
+    if not asset_name:
+        errors.append("Asset name is required.")
+    if asset_type not in valid_types:
+        errors.append("A valid asset type is required.")
+    if exposure not in valid_exposures:
+        errors.append("A valid exposure level is required.")
+    if criticality not in valid_criticalities:
+        errors.append("A valid criticality is required.")
+
+    hourly_revenue = 0.0
+    annual_turnover = 0.0
+    customer_count = 0
+    clv = 0.0
+    try:
+        hourly_revenue = float(hourly_revenue_str)
+        if hourly_revenue < 0:
+            errors.append("Hourly revenue must be ≥ 0.")
+    except ValueError:
+        errors.append("Hourly revenue must be a valid number.")
+    try:
+        annual_turnover = float(annual_turnover_str)
+        if annual_turnover < 0:
+            errors.append("Annual turnover must be ≥ 0.")
+    except ValueError:
+        errors.append("Annual turnover must be a valid number.")
+    try:
+        customer_count = int(customer_count_str)
+        if customer_count < 0:
+            errors.append("Customer count must be ≥ 0.")
+    except ValueError:
+        errors.append("Customer count must be a valid integer.")
+    try:
+        clv = float(clv_str)
+        if clv < 0:
+            errors.append("Customer lifetime value must be ≥ 0.")
+    except ValueError:
+        errors.append("Customer lifetime value must be a valid number.")
+
+    if errors:
+        return templates.TemplateResponse(
+            request=request,
+            name="custom_evaluate.html",
+            context={
+                "error": "<br>".join(errors) if len(errors) > 1 else errors[0],
+                "cve_id": cve_id,
+                "asset_name": asset_name,
+                "asset_type": asset_type,
+                "exposure": exposure,
+                "criticality": criticality,
+                "compliance": compliance,
+                "hourly_revenue": hourly_revenue_str,
+                "annual_turnover": annual_turnover_str,
+                "customer_count": customer_count_str,
+                "customer_lifetime_value": clv_str,
+            },
+            status_code=400,
+        )
+
+    # --- Build custom asset dict --------------------------------------
+    custom_asset: dict = {
+        "id": "__custom__",
+        "name": asset_name,
+        "type": asset_type,
+        "exposure": exposure,
+        "criticality": criticality,
+        "compliance": compliance,
+        "hourly_revenue": hourly_revenue,
+        "annual_turnover": annual_turnover,
+        "customer_count": customer_count,
+        "customer_lifetime_value": clv,
+    }
+
+    # --- Run pipeline ------------------------------------------------
+    error = None
+    try:
+        result = await run_custom_evaluation(cve_id, custom_asset)
+        insert_audit_log(
+            "custom_evaluation_created",
+            f"CVE={cve_id} asset={asset_name} score={result['final_score']}",
+            _client_ip(request),
+        )
+        return RedirectResponse(url=f"/evaluation/{result['id']}", status_code=303)
+    except CVENotFoundError:
+        error = f"CVE '{cve_id}' was not found in the NVD database."
+    except Exception as e:
+        error = f"Unexpected error: {e}"
+
+    return templates.TemplateResponse(
+        request=request,
+        name="custom_evaluate.html",
+        context={
+            "error": error,
+            "cve_id": cve_id,
+            "asset_name": asset_name,
+            "asset_type": asset_type,
+            "exposure": exposure,
+            "criticality": criticality,
+            "compliance": compliance,
+            "hourly_revenue": hourly_revenue_str,
+            "annual_turnover": annual_turnover_str,
+            "customer_count": customer_count_str,
+            "customer_lifetime_value": clv_str,
+        },
+        status_code=400,
+    )
 
 
 # ── Batch evaluation (Phase 2) ─────────────────────────────────────────────
