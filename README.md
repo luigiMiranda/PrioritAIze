@@ -13,7 +13,7 @@ A dockerized framework that dynamically prioritizes vulnerabilities by combining
 ### 1. Clone
 
 ```bash
-git clone <repo-url> && cd progetto-pentest
+git clone https://github.com/luigiMiranda/PrioritAIze.git && cd PrioritAIze
 ```
 
 ### 2. Configure your LLM endpoint
@@ -25,7 +25,7 @@ cp .env.example .env
 Edit `.env` with your actual values:
 
 ```env
-LLM_BASE_URL=http://localhost:11434/v1   # your endpoint
+LLM_BASE_URL=http://localhost:11434/v1    # your endpoint
 LLM_MODEL=llama3.2                        # model name
 LLM_API_KEY=ollama                        # your API key
 SCORING_FORMULA=phase2                    # phase1 or phase2 (with financial impact)
