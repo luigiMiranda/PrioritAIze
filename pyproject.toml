@@ -1,7 +1,7 @@
 [project]
-name = "progetto-pentest"
+name = "PrioritAIze"
 version = "0.2.0"
-description = "Add your description here"
+description = "A dockerized framework that dynamically prioritizes vulnerabilities by combining LLM reasoning, asset context, and business impact analysis — moving beyond static CVSS scores to actionable, business-aware risk assessments."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
