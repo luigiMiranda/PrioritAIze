@@ -92,7 +92,7 @@ async def run_evaluation(cve_id: str, asset_id: str) -> dict:
         },
         "financial_score_normalization": {
             "raw_total": impact["total_financial_impact"],
-            "formula": "log10(total + 1) × 1.5, capped at 10",
+            "formula": "log10(total + 1) × 1.5",
             "score": financial_score,
         },
     }
@@ -192,7 +192,7 @@ async def run_custom_evaluation(cve_id: str, custom_asset: dict) -> dict:
         },
         "financial_score_normalization": {
             "raw_total": impact["total_financial_impact"],
-            "formula": "log10(total + 1) × 1.5, capped at 10",
+            "formula": "log10(total + 1) × 1.5",
             "score": financial_score,
         },
     }

@@ -108,14 +108,16 @@ def format_money(amount: float) -> str:
 
 
 def normalize_financial_impact(total_impact: float) -> float:
-    """Log-scale normalisation to 0–10 for use in the risk-score formula.
+    """Log-scale normalisation for use in the risk-score formula.
 
-    ``log10(total + 1) * 1.5`` keeps scores in a meaningful band even when
-    impact spans several orders of magnitude (thousands → tens of millions).
+    ``log10(total + 1) * 1.5`` maps financial impact to a score where each
+    order of magnitude adds ~1.5 points. There is **no cap** — this preserves
+    differentiation above €10M (e.g. €50M → 11.6 vs €10M → 10.5). The log
+    function ensures the score grows increasingly slowly, so it never explodes.
     """
     if total_impact <= 0:
         return 0.0
-    return min(10.0, round(math.log10(total_impact + 1) * 1.5, 1))
+    return round(math.log10(total_impact + 1) * 1.5, 1)
 
 
 # ── helpers ────────────────────────────────────────────────────────────────

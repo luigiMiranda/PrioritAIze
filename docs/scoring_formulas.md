@@ -216,23 +216,29 @@ Reputational_Cost = customer_count × churn_pct × customer_lifetime_value
 
 ## 4. Financial Score Normalization (log₁₀)
 
-The raw total financial impact is normalised to 0–10 for use in the risk-score
+The raw total financial impact is normalised to a score for use in the risk-score
 formula:
 
 ```
-Financial_Score = min(10, log₁₀(Total_Financial_Impact + 1) × 1.5)
+Financial_Score = log₁₀(Total_Financial_Impact + 1) × 1.5
 ```
 
+There is **no upper cap** — the log function naturally compresses values so the
+score grows increasingly slowly. This preserves differentiation between impacts
+above €10M (e.g. €50M → 11.5, €100M → 12.0 where previously both were capped at 10).
+
 **Why a logarithmic scale?** Financial impacts span orders of magnitude: from
-€4,000 (isolated IoT sensor, threat ≤ 4) to €30M+ (public web server with GDPR
+€4,000 (isolated IoT sensor, threat ≤ 4) to €50M+ (public web server with GDPR
 + PCI-DSS, threat 10). A linear map would collapse the entire range or
 over-saturate the 0–10 band. The log₁₀ function compresses the range so that
 differences in orders of magnitude are rewarded, but within the same order of
-magnitude the score is stable.
+magnitude the score is stable. The formula intentionally has no cap — this
+preserves differentiation between impacts above €10M (e.g. €50M → 11.5 vs
+€100M → 12.0) while the log function ensures the score never explodes.
 
 The `+1` term ensures log(0) is avoided when total impact is €0 (no compliance,
-no customers). The `×1.5` multiplier spreads the outputs over the 0–10 band
-(€0 → 0, €1K → 4.5, €1M → 9.0, €10M → 10.5 cap at 10, €30M → 10.5 cap at 10).
+no customers). The `×1.5` multiplier spreads outputs across a useful band
+(€0 → 0, €1K → 4.5, €1M → 9.0, €10M → 10.5, €100M → 12.0).
 
 ---
 

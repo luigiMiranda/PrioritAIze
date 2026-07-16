@@ -268,7 +268,7 @@
                     <td>30%</td>
                     <td>{{ "${:,.0f}".format(ev.total_financial_impact or 0) }} &rarr; {{ fin_score }}/10</td>
                     <td><strong>{{ breakdown.financial_contribution }}</strong></td>
-                    <td class="small text-muted">Sum of downtime + fines + reputation costs, normalised via <code>log&#8321;&#8320;(total+1)&times;1.5</code> (capped at 10). <span class="font-monospace">{{ fin_score }} &times; {{ weights.fin }} = {{ breakdown.financial_contribution }}</span></td>
+                    <td class="small text-muted">Sum of downtime + fines + reputation costs, normalised via <code>log&#8321;&#8320;(total+1)&times;1.5</code>. <span class="font-monospace">{{ fin_score }} &times; {{ weights.fin }} = {{ breakdown.financial_contribution }}</span></td>
                 </tr>
                 {% endif %}
                 <tr class="table-active">
