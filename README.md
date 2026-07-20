@@ -46,18 +46,30 @@ The app starts at **http://localhost:8000**.
 
 ### 4. Run an evaluation
 
+**Standard evaluation** (seed assets from `data/assets.yaml`):
+
 1. Open http://localhost:8000/evaluate
 2. Enter a CVE ID (e.g., `CVE-2021-44228` for Log4Shell)
 3. Select a target asset from the dropdown
 4. Click **Evaluate Risk**
 
+**Custom evaluation** (define your own asset with financial parameters on the fly):
+
+1. Open http://localhost:8000/evaluate/custom
+2. Enter a CVE ID
+3. Fill in asset metadata: name, type, exposure, criticality, compliance tags
+4. Enter financial parameters: hourly revenue, annual turnover, customer count, customer lifetime value (CLV)
+5. Click **Evaluate Risk**
+
+> Penalties, churn percentages, and downtime-hour brackets are always sourced from `data/cost_model.yaml` — only business-specific financial figures (revenue, turnover, customers, CLV) are user-configurable.
+
 The system will:
-1. Fetch the CVE description & CVSS score from the **NVD**
+1. Fetch the CVE description & CVSS score from the **NVD** (with exponential backoff retry)
 2. Send it to your **LLM** for contextual risk reasoning + remediation recommendation
 3. Compute **business impact** (downtime costs, regulatory fines, reputational damage)
-4. Calculate a **dynamic risk score** (0–10) using the enhanced formula
+4. Calculate a **dynamic risk score** using the enhanced formula
 5. Persist the result in **PostgreSQL**
-6. Show the detailed breakdown with financial analysis
+6. Show the detailed breakdown with financial analysis and per-value calculation trace
 
 ## Project Structure
 
@@ -69,19 +81,21 @@ The system will:
 │   ├── templating.py        # Jinja2Templates singleton
 │   ├── middleware.py         # API-key / bearer-token auth middleware (Phase 2)
 │   ├── routes/
-│   │   ├── views.py         # Web page routes (dashboard, evaluate, batch, metrics, login)
-│   │   └── api.py           # JSON API routes (evaluate, batch, stats)
+│   │   ├── views.py         # Web page routes (dashboard, evaluate, custom, batch, metrics, login)
+│   │   └── api.py           # JSON API routes (evaluate, batch, stats, delete)
 │   ├── services/
-│   │   ├── nvd.py           # NVD API v2: CVE description + CVSS
-│   │   ├── llm.py           # OpenAI-compatible LLM risk analysis + remediation
+│   │   ├── nvd.py           # NVD API v2: CVE description + CVSS (with retry + backoff)
+│   │   ├── llm.py           # OpenAI-compatible LLM risk analysis + structured justification
 │   │   ├── scorer.py        # Weighted risk score formula (Phase 1 & 2 toggle)
 │   │   ├── impact.py        # Business Impact Modeler: downtime, fines, reputation (Phase 2)
-│   │   ├── pipeline.py      # Full evaluation pipeline orchestrator
-│   │   ├── batch.py         # Batch evaluation with concurrent semaphore (Phase 2)
+│   │   ├── pipeline.py      # Full evaluation pipeline (standard + custom evaluation)
+│   │   ├── batch.py         # Batch evaluation with concurrent semaphore + stagger (Phase 2)
 │   │   └── assets/
 │   │       ├── cmdb.py      # Mock CMDB connector (Phase 2)
 │   │       └── cloud.py     # Mock cloud inventory (Phase 2)
 │   ├── templates/           # Jinja2 HTML (Bootstrap 5 + Chart.js + dark mode)
+│   │   ├── custom_evaluate.html  # Custom evaluation form (user-defined asset + finances)
+│   │   └── ...
 │   └── static/              # CSS, JS (dashboard.js for Chart.js rendering)
 ├── data/
 │   ├── assets.yaml          # 8 seed assets (types, exposures, criticalities, compliance)
@@ -91,8 +105,10 @@ The system will:
 ├── docker-compose.yaml      # App + PostgreSQL 16
 ├── Dockerfile               # Python 3.12-slim + uv
 ├── .env.example             # Configuration template
+├── spiegazione.md           # Comprehensive project guide (Italian)
 └── docs/
-    └── phase2-plan.md       # Phase 2 implementation plan
+    ├── phase2-plan.md       # Phase 2 implementation plan
+    └── scoring_formulas.md  # Full mathematical derivation of all scores & costs
 ```
 
 ## Scoring Formula
@@ -109,9 +125,11 @@ Score = (LLM Threat Level × 0.5) + (Asset Criticality × 0.3) + (Asset Exposure
 Score = (LLM Threat × 0.35) + (Criticality × 0.20) + (Exposure × 0.15) + (Financial Impact × 0.30)
 ```
 
-Financial impact is the total estimated cost (downtime + regulatory fines + reputational damage), normalized to a 0–10 scale using logarithmic scaling.
+Financial impact is the total estimated cost (downtime + regulatory fines + reputational damage), normalized via `log₁₀(total + 1) × 1.5` — logarithmic scaling with **no upper cap**, so a €100M breach (score ~12.0) is clearly differentiated from a €10M breach (score ~10.5).
 
 Toggle between formulas with `SCORING_FORMULA=phase1` or `SCORING_FORMULA=phase2` in `.env`.
+
+See [`docs/scoring_formulas.md`](docs/scoring_formulas.md) for the complete mathematical derivation of every parameter, including downtime brackets, regulatory penalty regimes per compliance tag, churn-tier thresholds, and worked examples.
 
 | Weight (P2) | Component | Source |
 |-------------|-----------|--------|
@@ -124,11 +142,24 @@ Toggle between formulas with `SCORING_FORMULA=phase1` or `SCORING_FORMULA=phase2
 
 The modeler quantifies three cost dimensions:
 
-1. **Downtime cost** = `hourly_revenue × estimated_downtime_hours` (downtime hours derived from threat level)
-2. **Regulatory fines** — per-compliance-tag penalties (GDPR: 4% turnover or €20M; HIPAA, PCI-DSS, SOX, NIS2)
-3. **Reputational damage** = `customer_churn_pct × customer_count × customer_lifetime_value`
+1. **Downtime cost** = `hourly_revenue × estimated_downtime_hours` (downtime hours bracketed by threat level)
+2. **Regulatory fines** — per-compliance-tag penalties (GDPR: `max(€20M, 4% × turnover)`; HIPAA, PCI-DSS, SOX, NIS2)
+3. **Reputational damage** = `customer_churn_pct × customer_count × customer_lifetime_value` (churn % tiered by severity)
 
-Parameters are configurable in `data/cost_model.yaml`.
+Parameters are configurable in `data/cost_model.yaml`. Each evaluation result page shows the full derivation of every monetary value in a collapsible "Per-value calculation details" table.
+
+### LLM Justification
+
+Every evaluation includes a structured **6-factor justification** from the LLM explaining *why* the threat level was chosen:
+
+1. CVE characteristics (attack vector, complexity, privileges, CIA impact)
+2. Asset type implications
+3. Exposure impact on attack surface
+4. Criticality impact on business damage
+5. Compliance tags with specific regulatory consequences
+6. Final verdict comparing assigned threat to raw CVSS (raised/lowered rationale)
+
+The justification is displayed prominently on the result page under "Why the LLM chose threat level = N/10".
 
 ## API
 
@@ -192,14 +223,19 @@ Edit `data/assets.yaml` to customize. Edit `data/cost_model.yaml` to adjust fina
 
 Visit `/batch` or use the API to evaluate multiple CVEs against a single asset concurrently. Up to 5 CVEs are processed in parallel to respect LLM and NVD rate limits.
 
-## Dashboard Features (Phase 2)
+## Dashboard & UI Features
 
 - **Score distribution histogram** (Chart.js bar chart)
 - **Asset type breakdown** (doughnut chart)
 - **Exposure distribution** (pie chart)
 - **Sortable evaluation table** with financial impact column
-- **CSV export** button
-- **Dark/light theme toggle** (persisted in localStorage)
+- **Delete records** (trash button per row with confirmation)
+- **CSV export** of visible evaluations
+- **Dark/light theme toggle** (persisted across page navigations via localStorage)
+- **Batch reasoning expand** — click 💬 on any batch row to see the full LLM justification, narrative, and remediation
+- **Per-value financial trace** — every evaluation result shows exactly how each monetary figure was computed (downtime formula, regulatory fine breakdown, reputation calculation, total, and log₁₀ normalization)
+- **Metrics page** (`/metrics`): aggregate stats, score distribution, average score by exposure
+- **Custom evaluation** (`/evaluate/custom`): define your own asset with financial parameters on the fly — no YAML editing needed
 
 ## Authentication (optional)
 
@@ -208,6 +244,23 @@ Set `APP_API_KEY` in `.env` to restrict access:
 - Web routes require `Authorization: Bearer <key>` header or `cvrs_auth` cookie
 - API routes require `X-API-Key` header
 - Leave empty for local development (no auth)
+
+## Custom Evaluation
+
+Need to assess a vulnerability against an asset not in the seed data? Use `/evaluate/custom` to define everything inline:
+
+- **Asset metadata**: name, type (web_server, database, api_endpoint, iot_device, workstation, control_system), exposure (public/internal/isolated), criticality (high/medium/low), compliance tags (GDPR, HIPAA, PCI-DSS, SOX, NIS2)
+- **Financial parameters**: hourly revenue (€/h), annual turnover (€), customer count, customer lifetime value (€)
+
+Penalties, churn percentages, and downtime-hour brackets always come from `data/cost_model.yaml` — only your business-specific numbers are exposed. The pipeline reuses the same NVD → LLM → impact → scoring → persistence codepath, so results appear on the dashboard with the same detailed breakdown.
+
+## Documentation
+
+- **[`spiegazione.md`](spiegazione.md)** — comprehensive project guide in Italian covering architecture, every component, parameter glossary, design rationale, user workflows, oral presentation guide, and written report chapter mapping
+- **[`docs/scoring_formulas.md`](docs/scoring_formulas.md)** — complete mathematical derivation of all scores, financial costs, normalization, and weight rationale
+- **[`docs/phase2-plan.md`](docs/phase2-plan.md)** — original Phase 2 implementation plan
+- **[`history.md`](history.md)** — full audit trail of every implementation step
+- **[`report.typ`](report.typ)** — final Typst report (8 chapters, compilable with `typst compile report.typ`)
 
 ## Commands
 
