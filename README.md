@@ -255,11 +255,6 @@ Need to assess a vulnerability against an asset not in the seed data? Use `/eval
 Penalties, churn percentages, and downtime-hour brackets always come from `data/cost_model.yaml` — only your business-specific numbers are exposed. The pipeline reuses the same NVD → LLM → impact → scoring → persistence codepath, so results appear on the dashboard with the same detailed breakdown.
 
 ## Documentation
-
-- **[`spiegazione.md`](spiegazione.md)** — comprehensive project guide in Italian covering architecture, every component, parameter glossary, design rationale, user workflows, oral presentation guide, and written report chapter mapping
-- **[`docs/scoring_formulas.md`](docs/scoring_formulas.md)** — complete mathematical derivation of all scores, financial costs, normalization, and weight rationale
-- **[`docs/phase2-plan.md`](docs/phase2-plan.md)** — original Phase 2 implementation plan
-- **[`history.md`](history.md)** — full audit trail of every implementation step
 - **[`report.typ`](report.typ)** — final Typst report (8 chapters, compilable with `typst compile report.typ`)
 
 ## Commands
