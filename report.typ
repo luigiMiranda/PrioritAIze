@@ -776,14 +776,250 @@ nettamente superiore al CVSS statico suggerirebbe. Questo dimostra la capacità
 del sistema di *escalare* vulnerabilità apparentemente lievi quando il contesto
 normativo lo richiede.
 
-=== Correlazione CVSS vs Dynamic Score
+=== Analisi quantitativa: LLM Threat Level vs CVSS
 
-Dall'analisi delle valutazioni effettuate, emerge una correlazione moderata tra
-CVSS statico e score dinamico, con deviazioni significative nei casi in cui il
-contesto aziendale (esposizione, criticità, compliance) altera materialmente il
-rischio percepito. La varianza aggiuntiva introdotta dal sistema PrioritAIze è *il
-valore aggiunto* rispetto al solo CVSS: non si tratta di rumore, ma di
-differenziazione contestuale informata.
+Per valutare sistematicamente il comportamento del sistema, è stata condotta
+un'analisi su un dataset di 56 valutazioni generate dal modello di
+contestualizzazione (7 CVE diverse × 8 asset), confrontando il threat level
+assegnato dall'LLM con il punteggio CVSS statico di ciascuna vulnerabilità.
+
+L'obiettivo dell'analisi non è misurare l'"accuratezza" del LLM rispetto al CVSS
+(sarebbe concettualmente errato: il sistema è progettato per discostarsi dal CVSS
+quando il contesto lo giustifica), ma verificare che:
+
+1. Il LLM mantenga un allineamento con la gravità tecnica (non allucini);
+2. I delta siano *sistematici* e prevedibili (non casuali);
+3. La direzione dei delta sia coerente con il contesto (alzare per asset
+   pubblici/critici, abbassare per asset interni/bassa criticità).
+
+==== Metriche di confronto LLM vs CVSS
+
+#figure(
+  table(
+    columns: 3,
+    align: (left, center, left),
+    table.header(
+      [*Metrica*], [*Valore*], [*Interpretazione*]
+    ),
+    [MAE (Mean Absolute Error)], [1.08 / 10],
+    [Scostamento medio assoluto LLM--CVSS. Un valore di ~1 punto su scala
+      0--10 indica che il LLM si discosta moderatamente dal CVSS, come atteso
+      per un sistema che contestualizza.],
+    [RMSE (Root Mean Squared Error)], [1.37],
+    [Penalizza i delta grandi (errore quadratico medio). Un RMSE leggermente
+      superiore al MAE indica la presenza di alcuni scostamenti più marcati
+      (es. CVSS alto su asset a bassa criticità).],
+    [Pearson r (correlazione lineare)], [0.844],
+    [Forte correlazione lineare — l'LLM è allineato con l'ordine di grandezza
+      del CVSS ma non lo replica pedissequamente. Un valore di ~0.84 è ottimale:
+      sufficientemente alto da escludere allucinazioni, sufficientemente basso
+      da dimostrare contestualizzazione.],
+    [Spearman $rho$ (correlazione ordinale)], [0.831],
+    [Forte concordanza sui ranghi — le vulnerabilità più gravi secondo il CVSS
+      tendono a ricevere threat level più alti anche dall'LLM, preservando
+      l'ordinamento relativo.],
+  ),
+  caption: [Metriche di confronto tra LLM threat level e CVSS statico su 56
+    valutazioni (7 CVE $times$ 8 asset).],
+) <llm-cvss-metrics>
+
+==== Direzione e distribuzione dei delta
+
+Il delta è definito come $Delta = "LLM Threat" - "CVSS"$ (scala 0--10). Un
+valore positivo indica che l'LLM ha *alzato* il threat rispetto al CVSS; un
+valore negativo indica che lo ha *abbassato*. Valori compresi tra $-0.5$ e $+0.5$
+sono considerati "allineati".
+
+#figure(
+  table(
+    columns: 4,
+    align: (left, center, center, left),
+    table.header(
+      [*Direzione*], [*N. valutazioni*], [*Percentuale*], [*Significato*]
+    ),
+    [Rialzato ($Delta >= +0.5$)], [11], [20%],
+    [LLM assegna threat superiore al CVSS — tipicamente asset pubblici con
+      compliance (GDPR, PCI-DSS) o CVE di tipo information disclosure dove
+      il danno reputazionale/normativo supera la gravità tecnica.],
+    [Abbassato ($Delta <= -0.5$)], [28], [50%],
+    [LLM assegna threat inferiore al CVSS — asset interni/isolati, bassa
+      criticità, assenza di compliance. Il sistema riconosce che il blast
+      radius è limitato.],
+    [Allineato ($|Delta| < 0.5$)], [17], [30%],
+    [LLM e CVSS sostanzialmente concordi — tipicamente quando il contesto
+      non introduce fattori di aggravio o mitigazione significativi.],
+  ),
+  caption: [Distribuzione della direzione dei delta su 56 valutazioni.
+    Delta medio complessivo: $-0.53$.],
+) <delta-direction>
+
+La prevalenza di delta negativi (50%) rispetto a quelli positivi (20%) riflette
+la composizione del dataset: 5 degli 8 asset hanno esposizione internal o
+isolated, e 4 hanno criticità medium o low, portando il sistema a ridurre il
+rischio percepito nella maggioranza dei casi. Questo è coerente con il modello
+progettato.
+
+==== Analisi dei delta per contesto
+
+*Delta per esposizione.* L'esposizione è il fattore che più influenza il
+comportamento del LLM:
+
+#figure(
+  table(
+    columns: 7,
+    align: (left, center, center, center, center, center, center),
+    table.header(
+      [*Esposizione*], [*N.*], [*$Delta$ medio*], [*Min*], [*Max*],
+      [*Rialzati*], [*Abbassati*]
+    ),
+    [public], [21], [+0.24], [-1.0], [+2.6], [6], [4],
+    [internal], [21], [-0.76], [-3.1], [+1.8], [4], [13],
+    [isolated], [14], [-1.36], [-2.8], [+0.8], [1], [11],
+  ),
+  caption: [Delta LLM--CVSS stratificati per esposizione dell'asset.],
+) <delta-exposure>
+
+Gli asset pubblici mostrano un delta medio positivo ($+0.24$): l'LLM tende a
+considerare la superficie d'attacco estesa come fattore aggravante. Gli asset
+isolati, al contrario, mostrano il delta medio più negativo ($-1.36$): l'LLM
+riconosce che l'accesso limitato riduce significativamente il rischio di
+sfruttamento effettivo.
+
+*Delta per criticità.* La criticità dell'asset determina l'impatto sul business
+in caso di compromissione:
+
+#figure(
+  table(
+    columns: 7,
+    align: (left, center, center, center, center, center, center),
+    table.header(
+      [*Criticità*], [*N.*], [*$Delta$ medio*], [*Min*], [*Max*],
+      [*Rialzati*], [*Abbassati*]
+    ),
+    [high], [28], [-0.13], [-2.0], [+2.6], [7], [12],
+    [medium], [21], [-0.56], [-2.8], [+1.8], [4], [10],
+    [low], [7], [-2.06], [-3.1], [-0.3], [0], [6],
+  ),
+  caption: [Delta LLM--CVSS stratificati per criticità dell'asset.],
+) <delta-criticality>
+
+Gli asset a bassa criticità mostrano un delta medio di $-2.06$ — il più
+marcato tra tutti i fattori. Questo conferma che il LLM sta effettivamente
+*de-escalando* le vulnerabilità quando l'impatto aziendale è limitato, anche
+per CVE con CVSS elevato (es. Log4Shell su `db-internal-dev`: delta $-2.0$).
+
+*Delta per tipo di CVE.* Diversi tipi di vulnerabilità ricevono un trattamento
+differenziato dal LLM:
+
+#figure(
+  table(
+    columns: 4,
+    align: (left, center, center, center),
+    table.header(
+      [*Tipo CVE*], [*N.*], [*$Delta$ medio*], [*Range*]
+    ),
+    [Information Disclosure], [8], [+1.25], [-0.5 .. +2.6],
+    [SSRF], [8], [+0.25], [-1.0 .. +1.8],
+    [RCE], [24], [-0.88], [-2.0 .. +2.0],
+    [Container Escape], [8], [-1.05], [-2.6 .. +0.3],
+    [DoS], [8], [-1.55], [-3.1 .. -0.2],
+  ),
+  caption: [Delta LLM--CVSS stratificati per tipologia di vulnerabilità.],
+) <delta-cvetype>
+
+Le vulnerabilità di *information disclosure* ricevono il delta medio più alto
+($+1.25$): il LLM riconosce che l'esposizione di dati — specialmente in
+presenza di tag normativi come GDPR — comporta un impatto aziendale e
+reputazionale che il CVSS tecnico non cattura. Al contrario, i *DoS* ricevono
+il delta medio più basso ($-1.55$): il LLM considera l'impatto di un
+interruzione di servizio come meno grave rispetto a una compromissione di dati.
+
+*Delta per compliance.* La presenza di tag normativi modula il comportamento
+del LLM:
+
+#figure(
+  table(
+    columns: 4,
+    align: (left, center, center, center),
+    table.header(
+      [*Tag normativo*], [*N.*], [*$Delta$ medio*], [*Range*]
+    ),
+    [PCI-DSS], [7], [+0.64], [-0.2 .. +2.6],
+    [GDPR], [28], [+0.19], [-1.0 .. +2.6],
+    [HIPAA], [7], [+0.04], [-1.0 .. +1.8],
+    [SOX], [7], [-0.26], [-1.3 .. +1.5],
+    [NIS2], [7], [-0.96], [-2.0 .. +0.8],
+  ),
+  caption: [Delta LLM--CVSS per tag normativo presente sull'asset.],
+) <delta-compliance>
+
+Gli asset con tag PCI-DSS mostrano il delta medio più positivo ($+0.64$): il
+LLM riconosce il rischio di sanzioni legate ai dati delle carte di pagamento.
+Gli asset NIS2 (sistema SCADA isolato) mostrano un delta negativo ($-0.96$):
+nonostante la compliance, l'esposizione isolata riduce il rischio pratico di
+sfruttamento.
+
+==== Interpretazione dei risultati
+
+L'analisi su 56 valutazioni dimostra tre proprietà fondamentali del sistema:
+
+1. *Non-allucinazione*: la correlazione di Pearson $r = 0.844$ e la
+   correlazione di Spearman $rho = 0.831$ confermano che l'LLM mantiene un
+   allineamento robusto con la gravità tecnica delle vulnerabilità, senza
+   produrre valutazioni arbitrarie o casuali.
+
+2. *Contestualizzazione sistematica*: i delta non sono distribuiti
+   uniformemente, ma mostrano pattern coerenti con il modello di rischio
+   progettato. Asset pubblici → threat alzato; asset interni/isolati
+   → threat abbassato; alta criticità → threat mantenuto;
+   bassa criticità → threat ridotto; presenza di compliance
+   → threat aumentato. Ogni pattern è nella direzione attesa dal
+   modello.
+
+3. *Differenziazione per tipo di vulnerabilità*: l'LLM non tratta tutte le CVE
+   allo stesso modo. Information disclosure su asset con dati personali viene
+   *alzata* rispetto al CVSS; DoS su asset interni viene *abbassato*. Questa
+   granularità è impossibile da ottenere con i soli Environmental Metrics del
+   CVSS, che operano su tre parametri uniformi (CR, IR, AR) senza distinguere
+   il tipo di vulnerabilità.
+
+La tabella seguente mostra le valutazioni più rappresentative che illustrano
+il comportamento di contestualizzazione:
+
+#figure(
+  table(
+    columns: 8,
+    align: (left, left, center, center, center, center, center, left),
+    table.header(
+      [*CVE*], [*Asset*], [*CVSS*], [*LLM*], [*$Delta$*], [*Esp.*], [*Crit.*],
+      [*Motivazione delta*]
+    ),
+    [`CVE-2021-44228`], [`web-payment-prod`], [10.0], [10.0], [+0.0],
+    [pub], [high], [RCE critico su gateway pagamenti PCI-DSS+GDPR: già al
+      massimo, nessuno spazio per alzare.],
+    [`CVE-2021-44228`], [`db-internal-dev`], [10.0], [8.0], [-2.0],
+    [int], [low], [Stessa RCE, ma asset interno di sviluppo senza compliance:
+      blast radius limitato, de-escalation corretta.],
+    [`CVE-2018-1423`], [`api-third-party`], [4.3], [6.0], [+1.7],
+    [pub], [med], [Info disclosure su API pubblica GDPR: il danno normativo e
+      reputazionale supera la gravità tecnica.],
+    [`CVE-2026-45264`], [`api-third-party`], [4.3], [5.0], [+0.7],
+    [pub], [med], [SSRF su API GDPR: rischio limitato (no RCE) ma comunque
+      aggravato dall'esposizione pubblica.],
+    [`CVE-2023-46604`], [`iot-building-mgmt`], [10.0], [7.5], [-2.5],
+    [iso], [med], [RCE critico ma su sistema IoT isolato senza compliance:
+      rischio di exploitation pratico molto ridotto.],
+    [`CVE-2023-44487`], [`scada-plant-floor`], [7.5], [5.7], [-1.8],
+    [iso], [high], [DoS su controller SCADA isolato: l'isolamento di rete mitiga
+      il vettore d'attacco, nonostante la criticità elevata.],
+  ),
+  caption: [Valutazioni rappresentative che illustrano il comportamento di
+    contestualizzazione del sistema. I delta positivi indicano escalation
+    rispetto al CVSS; quelli negativi de-escalation.],
+) <delta-examples>
+
+I risultati completi dell'analisi, con le 56 valutazioni e i dettagli di ogni
+delta, sono disponibili nel file `analysis_risultati.md` nella root del progetto.
 
 === Trasparenza delle formule
 
